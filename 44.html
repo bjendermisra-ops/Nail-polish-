@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AudioTube (ISKCON)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background-color: #f1f1f1; padding-bottom: 80px; }
+        
+        .header { background: #fff; padding: 15px; position: sticky; top: 0; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; gap: 10px; z-index: 100; }
+        .header input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
+        .header button { padding: 10px 15px; background: #ff0000; color: white; border: none; border-radius: 20px; cursor: pointer; }
+
+        .feed { padding: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+        .video-card { background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+        .video-card img { width: 100%; height: 100px; object-fit: cover; }
+        .video-card .info { padding: 10px; font-size: 14px; }
+        .video-card .title { font-weight: bold; color: #333; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .video-card .channel { color: #666; font-size: 12px; margin-top: 5px; }
+
+        .player { position: fixed; bottom: 0; width: 100%; background: #222; color: white; padding: 10px 15px; display: flex; flex-direction: column; gap: 5px; box-shadow: 0 -2px 10px rgba(0,0,0,0.3); z-index: 100; }
+        .player .song-title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; color: #ff9900; }
+        .player audio { width: 100%; height: 40px; outline: none; }
+        
+        #loading { text-align: center; margin-top: 20px; font-weight: bold; color: #555; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <input type="text" id="searchInput" placeholder="Search Kirtan, Lectures..." value="ISKCON Kirtan">
+        <button onclick="searchYouTube()">Search</button>
+    </div>
+
+    <div id="loading">Loading videos... Please wait.</div>
+
+    <div class="feed" id="videoFeed"></div>
+
+    <div class="player">
+        <div class="song-title" id="nowPlaying">Not Playing</div>
+        <audio id="audioPlayer" controls autoplay></audio>
+    </div>
+
+    <script>
+        // 5 अलग-अलग API सर्वर्स (ऑटो-स्विचिंग के लिए)
+        const API_SERVERS = [
+            "https://pipedapi.kavin.rocks",
+            "https://pipedapi.tokhmi.xyz",
+            "https://pipedapi.syncpundit.io",
+            "https://piped-api.garudalinux.org",
+            "https://api-piped.mha.fi"
+        ];
+
+        window.onload = () => searchYouTube();
+
+        // जो सर्वर काम कर रहा होगा, यह फंक्शन उसी से डाटा लाएगा
+        async function fetchWithFallback(endpoint) {
+            for (let i = 0; i < API_SERVERS.length; i++) {
+                try {
+                    const response = await fetch(API_SERVERS[i] + endpoint);
+                    if (response.ok) {
+                        return await response.json(); // अगर सर्वर सही है तो डाटा रिटर्न करो
+                    }
+                } catch (error) {
+                    console.log("Server error, trying next..."); // अगर फेल हुआ तो अगला चेक करो
+                }
+            }
+            throw new Error("All servers down");
+        }
+
+        async function searchYouTube() {
+            const query = document.getElementById('searchInput').value;
+            if (!query) return;
+
+            const feed = document.getElementById('videoFeed');
+            const loading = document.getElementById('loading');
+            
+            feed.innerHTML = "";
+            loading.style.display = "block";
+            loading.innerText = "Searching... Please wait.";
+
+            try {
+                // Fallback फंक्शन से सर्च करो
+                const data = await fetchWithFallback(`/search?q=${encodeURIComponent(query)}&filter=all`);
+                
+                loading.style.display = "none";
+                const videos = data.items.filter(item => item.type === "stream");
+
+                if (videos.length === 0) {
+                     loading.style.display = "block";
+                     loading.innerText = "No videos found.";
+                     return;
+                }
+
+                videos.forEach(video => {
+                    let videoId = video.url.split("v=")[1];
+                    if (!videoId) return;
+
+                    const card = document.createElement('div');
+                    card.className = 'video-card';
+                    card.onclick = () => playAudio(videoId, video.title);
+
+                    card.innerHTML = `
+                        <img src="${video.thumbnail}" alt="Thumbnail">
+                        <div class="info">
+                            <div class="title">${video.title}</div>
+                            <div class="channel">${video.uploaderName}</div>
+                        </div>
+                    `;
+                    feed.appendChild(card);
+                });
+
+            } catch (error) {
+                loading.style.display = "block";
+                loading.innerText = "Error! Please host this code on Vercel to bypass mobile restrictions.";
+            }
+        }
+
+        async function playAudio(videoId, title) {
+            const player = document.getElementById('audioPlayer');
+            const nowPlaying = document.getElementById('nowPlaying');
+
+            nowPlaying.innerText = "Loading audio... (" + title + ")";
+            player.pause();
+
+            try {
+                const data = await fetchWithFallback(`/streams/${videoId}`);
+
+                if (data.audioStreams && data.audioStreams.length > 0) {
+                    player.src = data.audioStreams[0].url;
+                    player.play();
+                    nowPlaying.innerText = title; 
+                } else {
+                    nowPlaying.innerText = "Audio not available.";
+                }
+            } catch (error) {
+                nowPlaying.innerText = "Error playing audio.";
+            }
+        }
+    </script>
+
+</body>
+</html>
