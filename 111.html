@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISKCON Real Audio</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background-color: #f0f2f5; padding-bottom: 90px; position: relative; }
+        
+        .header { background: #ff4500; padding: 15px; position: sticky; top: 0; z-index: 100; display: flex; gap: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .header input { flex: 1; padding: 10px 15px; border: none; border-radius: 20px; outline: none; font-size: 15px; font-weight: bold; }
+        .header button { padding: 10px 15px; background: #fff; color: #ff4500; border: none; border-radius: 20px; font-weight: bold; cursor: pointer; }
+
+        #status { text-align: center; margin-top: 30px; font-weight: bold; color: #333; }
+
+        .feed { padding: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px; }
+        .card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); cursor: pointer; }
+        .card img { width: 100%; height: 120px; object-fit: cover; }
+        .card .info { padding: 10px; }
+        .card .title { font-size: 14px; font-weight: bold; color: #111; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .card .channel { font-size: 12px; color: #666; margin-top: 5px; }
+
+        /* Music Player UI */
+        .player { position: fixed; bottom: 0; left: 0; width: 100%; background: #111; color: #fff; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; z-index: 100; border-top: 2px solid #ff4500; }
+        .player-info { width: 75%; }
+        .song-title { font-size: 14px; font-weight: bold; color: #ff9900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .controls button { background: none; border: none; color: #fff; cursor: pointer; display: flex; align-items: center; }
+        
+        /* OFFICIAL YOUTUBE PLAYER - Hidden in background so browser doesn't block audio */
+        .yt-hidden-wrapper { position: absolute; top: 0; left: 0; width: 100%; height: 200px; z-index: -10; opacity: 0.01; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <input type="text" id="searchInput" value="ISKCON Kirtan">
+        <button onclick="searchYouTube()">Search</button>
+    </div>
+
+    <div id="status">Ready to load...</div>
+    
+    <div class="feed" id="videoFeed"></div>
+
+    <div class="player">
+        <div class="player-info">
+            <div class="song-title" id="nowPlaying">Select a Kirtan to Play</div>
+        </div>
+        <div class="controls">
+            <button id="playBtn" onclick="togglePlay()">
+                <span class="material-icons" style="font-size: 45px;">play_circle</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- The Hidden Official Player -->
+    <div class="yt-hidden-wrapper">
+        <div id="ytplayer"></div>
+    </div>
+
+    <!-- YouTube API Script -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+    <script>
+        // 👉 यहाँ अपनी API Key डालो (Inverted Commas के अंदर) 👈
+        const API_KEY = "AIzaSyCLqdVPGru5yJQUtNwV5OIcbDRPAJqVWtY"; 
+        
+        let ytPlayer;
+        let isPlaying = false;
+
+        function onYouTubeIframeAPIReady() {
+            ytPlayer = new YT.Player('ytplayer', {
+                height: '200',
+                width: '100%',
+                videoId: '', 
+                playerVars: { 'playsinline': 1, 'controls': 0, 'autoplay': 1 },
+                events: { 'onStateChange': onPlayerStateChange }
+            });
+        }
+
+        function onPlayerStateChange(event) {
+            const playIcon = document.querySelector('#playBtn .material-icons');
+            if (event.data == YT.PlayerState.PLAYING) {
+                isPlaying = true;
+                playIcon.innerText = "pause_circle";
+            } else {
+                isPlaying = false;
+                playIcon.innerText = "play_circle";
+            }
+        }
+
+        function togglePlay() {
+            if (!ytPlayer) return;
+            if (isPlaying) ytPlayer.pauseVideo();
+            else ytPlayer.playVideo();
+        }
+
+        async function searchYouTube() {
+            if(API_KEY === "YOUR_API_KEY_HERE") {
+                document.getElementById('status').innerHTML = "<span style='color:red;'>Bhai! Phele API Key dalo code mein.</span>";
+                return;
+            }
+
+            const query = document.getElementById('searchInput').value;
+            const feed = document.getElementById('videoFeed');
+            const status = document.getElementById('status');
+            
+            feed.innerHTML = "";
+            status.style.display = "block";
+            status.innerText = "Searching from Official YouTube...";
+
+            try {
+                // Official Google API Fetch
+                const response = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=25&q=${encodeURIComponent(query)}&type=video&key=${API_KEY}`);
+                const data = await response.json();
+
+                if (data.items && data.items.length > 0) {
+                    status.style.display = "none";
+
+                    data.items.forEach(item => {
+                        const videoId = item.id.videoId;
+                        const title = item.snippet.title;
+                        const channel = item.snippet.channelTitle;
+                        const thumb = item.snippet.thumbnails.high.url;
+
+                        const card = document.createElement('div');
+                        card.className = 'card';
+                        card.onclick = () => playAudio(videoId, title);
+
+                        card.innerHTML = `
+                            <img src="${thumb}" alt="Thumbnail">
+                            <div class="info">
+                                <div class="title">${title}</div>
+                                <div class="channel">${channel}</div>
+                            </div>
+                        `;
+                        feed.appendChild(card);
+                    });
+                } else {
+                    status.innerText = "No results found.";
+                }
+            } catch (error) {
+                status.innerText = "Search Error! API Key check karo.";
+            }
+        }
+
+        function playAudio(videoId, title) {
+            const nowPlaying = document.getElementById('nowPlaying');
+            nowPlaying.innerText = "Loading... " + title;
+            
+            if (ytPlayer && ytPlayer.loadVideoById) {
+                ytPlayer.loadVideoById(videoId);
+                nowPlaying.innerText = title;
+            } else {
+                nowPlaying.innerText = "Player initializing, try again.";
+            }
+        }
+
+        // App khulte hi pehla search karega
+        window.onload = () => {
+            setTimeout(searchYouTube, 1500);
+        };
+    </script>
+</body>
+</html>
